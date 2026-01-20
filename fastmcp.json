@@ -1,0 +1,28 @@
+{
+  "name": "jsreport-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP Server para geração de relatórios PDF profissionais via JSReport - WebPosto",
+  "entrypoint": "server.py:mcp",
+  "env": {
+    "JSREPORT_URL": {
+      "description": "URL da instância JSReport",
+      "required": true,
+      "default": "https://relatorio.qualityautomacao.com.br"
+    },
+    "JSREPORT_USERNAME": {
+      "description": "Usuário para autenticação no JSReport",
+      "required": true,
+      "default": "admin"
+    },
+    "JSREPORT_PASSWORD": {
+      "description": "Senha para autenticação no JSReport",
+      "required": true,
+      "secret": true
+    },
+    "JSREPORT_DEFAULT_TEMPLATE": {
+      "description": "Nome do template padrão para relatórios",
+      "required": false,
+      "default": "wp-data-report"
+    }
+  }
+}

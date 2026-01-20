@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """
-JSReport MCP Server - WebPosto v2.0
+JSReport MCP Server - WebPosto v3.0
 Servidor MCP para integração com JSReport com seleção inteligente de templates
+e retorno de links públicos para PDFs.
 
 Compatível com FastMCP.cloud para deploy fácil e gerenciado.
 
 Autor: Quality Automação
-Versão: 2.0.0
+Versão: 3.0.0
+
+Changelog v3.0:
+- Adicionado suporte a links públicos (Permanent-Link)
+- Nova tool generate_report_link para retornar apenas URL
+- Redução de contexto para o agente (sem base64 por padrão)
+- Relatórios salvos no storage do JSReport
 """
 
 import os
 import base64
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Literal
 import httpx
 from fastmcp import FastMCP
 
@@ -25,7 +32,7 @@ DEFAULT_TEMPLATE = os.getenv("JSREPORT_DEFAULT_TEMPLATE", "wp-data-report")
 # Criar instância do FastMCP
 mcp = FastMCP(
     "JSReport MCP Server",
-    description="Servidor MCP para geração de relatórios PDF profissionais via JSReport - WebPosto (v2.0 com seleção inteligente)"
+    description="Servidor MCP para geração de relatórios PDF via JSReport - WebPosto (v3.0 com links públicos)"
 )
 
 
@@ -99,116 +106,64 @@ def detect_report_type(data: dict) -> str:
     return "wp-data-report"
 
 
-@mcp.tool
-def generate_smart_report(
-    report_title: str,
-    report_subtitle: str,
-    client_name: str,
-    period: str,
-    report_type: str,
-    generated_date: Optional[str] = None,
-    summary_cards: Optional[list[dict]] = None,
-    table_title: Optional[str] = None,
-    table_headers: Optional[list[str]] = None,
-    table_data: Optional[list[list[str]]] = None,
-    sections: Optional[list[dict]] = None
-) -> dict:
+def _render_report(template_name: str, data: dict, save_public: bool = True) -> dict:
     """
-    Gera um relatório PDF com seleção AUTOMÁTICA do template mais adequado.
-    
-    Esta tool analisa o conteúdo e tipo do relatório para escolher automaticamente
-    o template mais apropriado entre:
-    - wp-financeiro: Relatórios financeiros (contas, títulos, movimentações)
-    - wp-abastecimentos: Relatórios de vendas e abastecimentos
-    - wp-estoque: Relatórios de estoque e produtos
-    - wp-clientes: Relatórios de clientes e relacionamento
-    - wp-analitico: Análises e KPIs
-    - wp-executivo: Resumos executivos com múltiplas seções
+    Função interna para renderizar relatório no JSReport.
     
     Args:
-        report_title: Título principal do relatório
-        report_subtitle: Subtítulo do relatório
-        client_name: Nome do cliente/posto
-        period: Período do relatório (ex: '01/01/2026 - 20/01/2026')
-        report_type: Tipo de relatório (ex: 'Financeiro', 'Abastecimentos')
-        generated_date: Data de geração. Se não informado, usa data atual.
-        summary_cards: Lista de cards de resumo (máximo 3-6).
-                      Cada card deve ter 'title' e 'value'.
-        table_title: Título da tabela de dados
-        table_headers: Lista com os cabeçalhos das colunas
-        table_data: Lista de listas com os dados da tabela
-        sections: (Apenas para executivo) Lista de seções com cards e tabelas próprias.
-                 Cada seção pode ter: title, cards, tableHeaders, tableData
+        template_name: Nome do template a usar
+        data: Dados para o relatório
+        save_public: Se True, salva o relatório e retorna link público
     
     Returns:
-        Dicionário com o resultado, incluindo PDF em base64 e template usado.
-    
-    Example:
-        >>> generate_smart_report(
-        ...     report_title="Análise de Contas a Receber",
-        ...     report_subtitle="Análise de Dados - WebPosto",
-        ...     client_name="Posto Quality",
-        ...     period="Janeiro/2026",
-        ...     report_type="Financeiro - Contas a Receber",
-        ...     summary_cards=[
-        ...         {"title": "Total a Receber", "value": "R$ 125.450,00"},
-        ...         {"title": "Títulos Vencidos", "value": "R$ 12.340,00"},
-        ...         {"title": "Taxa de Inadimplência", "value": "9,8%"}
-        ...     ]
-        ... )
+        Dicionário com resultado da renderização
     """
     try:
-        # Usar data atual se não informada
-        if not generated_date:
-            generated_date = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        
-        # Montar dados para análise
-        data = {
-            "reportTitle": report_title,
-            "reportSubtitle": report_subtitle,
-            "clientName": client_name,
-            "period": period,
-            "reportType": report_type,
-            "generatedDate": generated_date
-        }
-        
-        # Adicionar dados opcionais
-        if summary_cards:
-            data["summaryCards"] = summary_cards
-        if table_title:
-            data["tableTitle"] = table_title
-        if table_headers:
-            data["tableHeaders"] = table_headers
-        if table_data:
-            data["tableData"] = table_data
-        if sections:
-            data["sections"] = sections
-        
-        # Detectar template mais adequado
-        template_name = detect_report_type(data)
+        # Configurar opções de salvamento
+        options = {}
+        if save_public:
+            options["reports"] = {
+                "save": True,
+                "public": True
+            }
         
         # Fazer requisição ao JSReport
         with httpx.Client(auth=get_auth(), timeout=60.0) as client:
+            payload = {
+                "template": {"name": template_name},
+                "data": data
+            }
+            if options:
+                payload["options"] = options
+            
             response = client.post(
                 f"{JSREPORT_URL}/api/report",
-                json={
-                    "template": {"name": template_name},
-                    "data": data
-                }
+                json=payload
             )
             
             if response.status_code == 200:
-                pdf_base64 = base64.b64encode(response.content).decode('utf-8')
-                return {
+                # Extrair link público do header
+                permanent_link = response.headers.get("Permanent-Link", "")
+                
+                result = {
                     "success": True,
                     "message": "Relatório gerado com sucesso!",
-                    "pdf_base64": pdf_base64,
-                    "content_type": response.headers.get("content-type", "application/pdf"),
-                    "size_bytes": len(response.content),
                     "template_used": template_name,
-                    "auto_selected": True,
-                    "instructions": "O PDF está em formato base64. Para salvar, decodifique e grave em arquivo .pdf"
+                    "content_type": response.headers.get("content-type", "application/pdf"),
+                    "size_bytes": len(response.content)
                 }
+                
+                # Adicionar link público se disponível
+                if permanent_link:
+                    result["pdf_url"] = permanent_link
+                    result["has_public_link"] = True
+                else:
+                    result["has_public_link"] = False
+                
+                # Sempre incluir base64 como fallback
+                result["pdf_base64"] = base64.b64encode(response.content).decode('utf-8')
+                
+                return result
             else:
                 return {
                     "success": False,
@@ -226,6 +181,197 @@ def generate_smart_report(
 
 
 @mcp.tool
+def generate_report_link(
+    report_title: str,
+    report_subtitle: str,
+    client_name: str,
+    period: str,
+    report_type: str,
+    generated_date: Optional[str] = None,
+    summary_cards: Optional[list[dict]] = None,
+    table_title: Optional[str] = None,
+    table_headers: Optional[list[str]] = None,
+    table_data: Optional[list[list[str]]] = None,
+    sections: Optional[list[dict]] = None
+) -> dict:
+    """
+    Gera um relatório PDF e retorna um LINK PÚBLICO para acesso direto.
+    
+    Esta é a tool RECOMENDADA para uso pelo agente. Retorna um link que pode ser
+    enviado diretamente ao cliente, sem necessidade de processar base64.
+    
+    O template é selecionado AUTOMATICAMENTE baseado no conteúdo:
+    - wp-financeiro: Relatórios financeiros (contas, títulos, movimentações)
+    - wp-abastecimentos: Relatórios de vendas e abastecimentos
+    - wp-estoque: Relatórios de estoque e produtos
+    - wp-clientes: Relatórios de clientes e relacionamento
+    - wp-analitico: Análises e KPIs
+    - wp-executivo: Resumos executivos com múltiplas seções
+    
+    Args:
+        report_title: Título principal do relatório
+        report_subtitle: Subtítulo do relatório (ex: 'Análise de Dados - WebPosto')
+        client_name: Nome do cliente/posto
+        period: Período do relatório (ex: '01/01/2026 - 20/01/2026')
+        report_type: Tipo de relatório (ex: 'Financeiro', 'Abastecimentos')
+        generated_date: Data de geração. Se não informado, usa data atual.
+        summary_cards: Lista de cards de resumo (máximo 3-6).
+                      Cada card deve ter 'title' e 'value'.
+        table_title: Título da tabela de dados
+        table_headers: Lista com os cabeçalhos das colunas
+        table_data: Lista de listas com os dados da tabela
+        sections: (Apenas para executivo) Lista de seções com cards e tabelas próprias.
+    
+    Returns:
+        Dicionário com:
+        - success: True/False
+        - pdf_url: Link público para download do PDF (principal)
+        - template_used: Nome do template utilizado
+        - size_bytes: Tamanho do arquivo
+    
+    Example:
+        >>> result = generate_report_link(
+        ...     report_title="Contas a Receber - Janeiro/2026",
+        ...     report_subtitle="Análise Financeira - WebPosto",
+        ...     client_name="Posto Quality",
+        ...     period="01/01/2026 - 31/01/2026",
+        ...     report_type="Financeiro - Contas a Receber",
+        ...     summary_cards=[
+        ...         {"title": "Total a Receber", "value": "R$ 125.450,00"},
+        ...         {"title": "Títulos Vencidos", "value": "R$ 12.340,00"}
+        ...     ]
+        ... )
+        >>> print(result["pdf_url"])
+        "https://relatorio.qualityautomacao.com.br/reports/abc123/content"
+    """
+    # Usar data atual se não informada
+    if not generated_date:
+        generated_date = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    
+    # Montar dados
+    data = {
+        "reportTitle": report_title,
+        "reportSubtitle": report_subtitle,
+        "clientName": client_name,
+        "period": period,
+        "reportType": report_type,
+        "generatedDate": generated_date
+    }
+    
+    # Adicionar dados opcionais
+    if summary_cards:
+        data["summaryCards"] = summary_cards
+    if table_title:
+        data["tableTitle"] = table_title
+    if table_headers:
+        data["tableHeaders"] = table_headers
+    if table_data:
+        data["tableData"] = table_data
+    if sections:
+        data["sections"] = sections
+    
+    # Detectar template mais adequado
+    template_name = detect_report_type(data)
+    
+    # Renderizar com salvamento público
+    result = _render_report(template_name, data, save_public=True)
+    
+    # Adicionar informação de seleção automática
+    if result.get("success"):
+        result["auto_selected"] = True
+        # Remover base64 para economizar contexto (link é suficiente)
+        if result.get("has_public_link") and "pdf_base64" in result:
+            del result["pdf_base64"]
+    
+    return result
+
+
+@mcp.tool
+def generate_smart_report(
+    report_title: str,
+    report_subtitle: str,
+    client_name: str,
+    period: str,
+    report_type: str,
+    generated_date: Optional[str] = None,
+    summary_cards: Optional[list[dict]] = None,
+    table_title: Optional[str] = None,
+    table_headers: Optional[list[str]] = None,
+    table_data: Optional[list[list[str]]] = None,
+    sections: Optional[list[dict]] = None,
+    return_base64: bool = False
+) -> dict:
+    """
+    Gera um relatório PDF com seleção AUTOMÁTICA do template.
+    
+    Por padrão retorna link público. Use return_base64=True para obter o PDF em base64.
+    
+    Templates disponíveis (seleção automática):
+    - wp-financeiro: Relatórios financeiros
+    - wp-abastecimentos: Relatórios de vendas e abastecimentos
+    - wp-estoque: Relatórios de estoque e produtos
+    - wp-clientes: Relatórios de clientes
+    - wp-analitico: Análises e KPIs
+    - wp-executivo: Resumos executivos
+    
+    Args:
+        report_title: Título principal do relatório
+        report_subtitle: Subtítulo do relatório
+        client_name: Nome do cliente/posto
+        period: Período do relatório
+        report_type: Tipo de relatório
+        generated_date: Data de geração (padrão: data atual)
+        summary_cards: Cards de resumo
+        table_title: Título da tabela
+        table_headers: Cabeçalhos das colunas
+        table_data: Dados da tabela
+        sections: Seções (para template executivo)
+        return_base64: Se True, inclui PDF em base64 na resposta
+    
+    Returns:
+        Dicionário com pdf_url (link público) e opcionalmente pdf_base64.
+    """
+    # Usar data atual se não informada
+    if not generated_date:
+        generated_date = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    
+    # Montar dados
+    data = {
+        "reportTitle": report_title,
+        "reportSubtitle": report_subtitle,
+        "clientName": client_name,
+        "period": period,
+        "reportType": report_type,
+        "generatedDate": generated_date
+    }
+    
+    if summary_cards:
+        data["summaryCards"] = summary_cards
+    if table_title:
+        data["tableTitle"] = table_title
+    if table_headers:
+        data["tableHeaders"] = table_headers
+    if table_data:
+        data["tableData"] = table_data
+    if sections:
+        data["sections"] = sections
+    
+    # Detectar template
+    template_name = detect_report_type(data)
+    
+    # Renderizar
+    result = _render_report(template_name, data, save_public=True)
+    
+    if result.get("success"):
+        result["auto_selected"] = True
+        # Remover base64 se não solicitado
+        if not return_base64 and result.get("has_public_link") and "pdf_base64" in result:
+            del result["pdf_base64"]
+    
+    return result
+
+
+@mcp.tool
 def generate_report(
     report_title: str,
     report_subtitle: str,
@@ -238,13 +384,14 @@ def generate_report(
     table_headers: Optional[list[str]] = None,
     table_data: Optional[list[list[str]]] = None,
     sections: Optional[list[dict]] = None,
-    template_name: Optional[str] = None
+    template_name: Optional[str] = None,
+    return_base64: bool = False
 ) -> dict:
     """
     Gera um relatório PDF usando um template ESPECÍFICO.
     
     Use esta tool quando você souber exatamente qual template usar.
-    Para seleção automática, use generate_smart_report.
+    Para seleção automática, use generate_report_link ou generate_smart_report.
     
     Templates disponíveis:
     - wp-data-report: Template genérico original
@@ -268,71 +415,45 @@ def generate_report(
         table_data: Dados da tabela
         sections: Seções (para template executivo)
         template_name: Nome do template a usar (padrão: wp-data-report)
+        return_base64: Se True, inclui PDF em base64 na resposta
     
     Returns:
-        Dicionário com o resultado da operação.
+        Dicionário com pdf_url e opcionalmente pdf_base64.
     """
-    try:
-        if not generated_date:
-            generated_date = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        
-        if not template_name:
-            template_name = DEFAULT_TEMPLATE
-        
-        data = {
-            "reportTitle": report_title,
-            "reportSubtitle": report_subtitle,
-            "clientName": client_name,
-            "period": period,
-            "reportType": report_type,
-            "generatedDate": generated_date
-        }
-        
-        if summary_cards:
-            data["summaryCards"] = summary_cards
-        if table_title:
-            data["tableTitle"] = table_title
-        if table_headers:
-            data["tableHeaders"] = table_headers
-        if table_data:
-            data["tableData"] = table_data
-        if sections:
-            data["sections"] = sections
-        
-        with httpx.Client(auth=get_auth(), timeout=60.0) as client:
-            response = client.post(
-                f"{JSREPORT_URL}/api/report",
-                json={
-                    "template": {"name": template_name},
-                    "data": data
-                }
-            )
-            
-            if response.status_code == 200:
-                pdf_base64 = base64.b64encode(response.content).decode('utf-8')
-                return {
-                    "success": True,
-                    "message": "Relatório gerado com sucesso!",
-                    "pdf_base64": pdf_base64,
-                    "content_type": response.headers.get("content-type", "application/pdf"),
-                    "size_bytes": len(response.content),
-                    "template_used": template_name,
-                    "auto_selected": False,
-                    "instructions": "O PDF está em formato base64. Para salvar, decodifique e grave em arquivo .pdf"
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": f"Erro HTTP {response.status_code}",
-                    "details": response.text[:500] if response.text else "Sem detalhes"
-                }
-                
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "details": "Erro ao conectar com o JSReport"
-        }
+    if not generated_date:
+        generated_date = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    
+    if not template_name:
+        template_name = DEFAULT_TEMPLATE
+    
+    data = {
+        "reportTitle": report_title,
+        "reportSubtitle": report_subtitle,
+        "clientName": client_name,
+        "period": period,
+        "reportType": report_type,
+        "generatedDate": generated_date
+    }
+    
+    if summary_cards:
+        data["summaryCards"] = summary_cards
+    if table_title:
+        data["tableTitle"] = table_title
+    if table_headers:
+        data["tableHeaders"] = table_headers
+    if table_data:
+        data["tableData"] = table_data
+    if sections:
+        data["sections"] = sections
+    
+    result = _render_report(template_name, data, save_public=True)
+    
+    if result.get("success"):
+        result["auto_selected"] = False
+        if not return_base64 and result.get("has_public_link") and "pdf_base64" in result:
+            del result["pdf_base64"]
+    
+    return result
 
 
 @mcp.tool
@@ -433,7 +554,8 @@ def get_template_info(template_name: str) -> dict:
 def render_custom_html(
     html_content: str,
     data: Optional[dict] = None,
-    recipe: str = "chrome-pdf"
+    recipe: str = "chrome-pdf",
+    save_public: bool = True
 ) -> dict:
     """
     Renderiza HTML customizado para PDF usando o JSReport.
@@ -444,38 +566,107 @@ def render_custom_html(
         html_content: Conteúdo HTML com placeholders Handlebars
         data: Dicionário com dados para substituir os placeholders
         recipe: Recipe do JSReport (padrão: 'chrome-pdf')
+        save_public: Se True, salva e retorna link público
     
     Returns:
-        Dicionário com PDF em base64 ou erro.
+        Dicionário com pdf_url ou pdf_base64.
     """
     try:
+        options = {}
+        if save_public:
+            options["reports"] = {
+                "save": True,
+                "public": True
+            }
+        
         with httpx.Client(auth=get_auth(), timeout=60.0) as client:
+            payload = {
+                "template": {
+                    "content": html_content,
+                    "engine": "handlebars",
+                    "recipe": recipe
+                },
+                "data": data or {}
+            }
+            if options:
+                payload["options"] = options
+            
             response = client.post(
                 f"{JSREPORT_URL}/api/report",
-                json={
-                    "template": {
-                        "content": html_content,
-                        "engine": "handlebars",
-                        "recipe": recipe
-                    },
-                    "data": data or {}
-                }
+                json=payload
             )
             
             if response.status_code == 200:
-                pdf_base64 = base64.b64encode(response.content).decode('utf-8')
-                return {
+                permanent_link = response.headers.get("Permanent-Link", "")
+                
+                result = {
                     "success": True,
                     "message": "HTML renderizado com sucesso!",
-                    "pdf_base64": pdf_base64,
                     "content_type": response.headers.get("content-type", "application/pdf"),
                     "size_bytes": len(response.content)
                 }
+                
+                if permanent_link:
+                    result["pdf_url"] = permanent_link
+                    result["has_public_link"] = True
+                else:
+                    result["has_public_link"] = False
+                    result["pdf_base64"] = base64.b64encode(response.content).decode('utf-8')
+                
+                return result
             else:
                 return {
                     "success": False,
                     "error": f"Erro HTTP {response.status_code}",
                     "details": response.text[:500] if response.text else "Sem detalhes"
+                }
+                
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+@mcp.tool
+def list_saved_reports(limit: int = 20) -> dict:
+    """
+    Lista os relatórios salvos no JSReport.
+    
+    Args:
+        limit: Número máximo de relatórios a retornar (padrão: 20)
+    
+    Returns:
+        Dicionário com lista de relatórios salvos.
+    """
+    try:
+        with httpx.Client(auth=get_auth(), timeout=30.0) as client:
+            response = client.get(
+                f"{JSREPORT_URL}/odata/reports",
+                params={"$top": limit, "$orderby": "creationDate desc"}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                reports = [
+                    {
+                        "name": r.get("name"),
+                        "creationDate": r.get("creationDate"),
+                        "contentType": r.get("contentType"),
+                        "public": r.get("public", False),
+                        "_id": r.get("_id")
+                    }
+                    for r in data.get("value", [])
+                ]
+                return {
+                    "success": True,
+                    "count": len(reports),
+                    "reports": reports
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Erro HTTP {response.status_code}"
                 }
                 
     except Exception as e:

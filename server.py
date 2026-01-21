@@ -30,10 +30,8 @@ JSREPORT_PASSWORD = os.getenv("JSREPORT_PASSWORD", "")
 DEFAULT_TEMPLATE = os.getenv("JSREPORT_DEFAULT_TEMPLATE", "wp-data-report")
 
 # Criar instância do FastMCP
-mcp = FastMCP(
-    "JSReport MCP Server",
-    description="Servidor MCP para geração de relatórios PDF via JSReport - WebPosto (v3.0 com links públicos)"
-)
+# Nota: description removido para compatibilidade com FastMCP.cloud
+mcp = FastMCP("JSReport MCP Server")
 
 
 def get_auth():

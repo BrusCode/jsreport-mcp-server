@@ -22,8 +22,6 @@ from datetime import datetime
 from typing import Optional, Literal
 import httpx
 from fastmcp import FastMCP
-from fastmcp.resources import ResourceResult
-from fastmcp.prompts import Message, PromptResult
 
 # Configurações do JSReport via variáveis de ambiente
 JSREPORT_URL = os.getenv("JSREPORT_URL", "https://relatorio.qualityautomacao.com.br")
@@ -1073,15 +1071,14 @@ def analyze_fuel_sales(
     start_date: str,
     end_date: str,
     fuel_type: str = "Todos"
-) -> list[Message]:
+) -> str:
     """
     Cria um prompt estruturado para análise de vendas de combustível.
     
     Guia o agente através do processo completo de consulta, análise e geração
     de relatório para vendas de combustível.
     """
-    return [
-        Message(f"""Analise as vendas de combustível do cliente {client_name} entre {start_date} e {end_date}.
+    return f"""Analise as vendas de combustível do cliente {client_name} entre {start_date} e {end_date}.
 
 Combustível: {fuel_type}
 
@@ -1099,30 +1096,24 @@ Etapas a seguir:
    - Summary cards com as métricas principais
    - Tabela com detalhamento das vendas
 
-Apresente um resumo executivo e o link do relatório completo."""),
-        Message("Entendido. Vou consultar os dados de abastecimento e gerar a análise completa com relatório PDF.", role="assistant")
-    ]
+Apresente um resumo executivo e o link do relatório completo."""
 
 
 @mcp.prompt
 def create_executive_summary(
     client_name: str,
     month: str,
-    sections: list[str] = ["Financeiro", "Vendas", "Estoque"]
-) -> PromptResult:
+    sections: str = "Financeiro, Vendas, Estoque"
+) -> str:
     """
     Gera prompt para relatório executivo multi-seção.
     
     Este prompt cria um relatório consolidado com múltiplas seções,
     ideal para apresentações gerenciais.
     """
-    sections_str = ", ".join(sections)
-    
-    return PromptResult(
-        messages=[
-            Message(f"""Crie um relatório executivo completo para {client_name} referente a {month}.
+    return f"""Crie um relatório executivo completo para {client_name} referente a {month}.
 
-Seções a incluir: {sections_str}
+Seções a incluir: {sections}
 
 Para cada seção solicitada:
 1. Consulte os dados relevantes no webposto-mcp-server
@@ -1140,11 +1131,7 @@ Ao final:
 - Apresente um resumo executivo consolidado
 - Forneça o link do relatório PDF completo
 
-O relatório deve ser adequado para apresentação à diretoria.""")
-        ],
-        description=f"Relatório executivo multi-seção para {client_name}",
-        meta={"client": client_name, "month": month, "sections": sections}
-    )
+O relatório deve ser adequado para apresentação à diretoria."""
 
 
 @mcp.prompt
@@ -1188,15 +1175,14 @@ Apresente:
 
 
 @mcp.prompt
-def help_with_reports() -> list[Message]:
+def help_with_reports() -> str:
     """
     Fornece orientações sobre como usar o sistema de relatórios.
     
     Este prompt é útil quando o usuário não sabe que tipo de relatório
     solicitar ou como estruturar sua solicitação.
     """
-    return [
-        Message("""Olá! Posso ajudá-lo a gerar relatórios do WebPosto. 📊
+    return """Olá! Posso ajudá-lo a gerar relatórios do WebPosto. 📊
 
 **Tipos de relatórios disponíveis:**
 
@@ -1227,9 +1213,7 @@ def help_with_reports() -> list[Message]:
 3. Gero um relatório PDF profissional
 4. Forneço um link direto para download
 
-O que você gostaria de consultar?"""),
-        Message("Estou pronto para ajudar com seus relatórios! Pode me dizer que tipo de informação você precisa?", role="assistant")
-    ]
+O que você gostaria de consultar?"""
 
 
 @mcp.prompt

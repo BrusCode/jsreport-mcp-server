@@ -22,6 +22,8 @@ from datetime import datetime
 from typing import Optional, Literal
 import httpx
 from fastmcp import FastMCP
+from fastmcp.resources import ResourceResult
+from fastmcp.prompts import Message, PromptResult
 
 # Configurações do JSReport via variáveis de ambiente
 JSREPORT_URL = os.getenv("JSREPORT_URL", "https://relatorio.qualityautomacao.com.br")
@@ -674,3 +676,580 @@ def list_saved_reports(limit: int = 20) -> dict:
 # Ponto de entrada para execução local
 if __name__ == "__main__":
     mcp.run()
+# Resources e Prompts para adicionar ao server.py
+# Adicionar ANTES da linha "if __name__ == '__main__':"
+
+# ============================================================================
+# RESOURCES
+# ============================================================================
+
+@mcp.resource("jsreport://templates")
+def list_templates_resource() -> str:
+    """
+    Lista todos os templates disponíveis no JSReport com suas informações.
+    
+    Este resource fornece uma visão geral dos templates que podem ser usados
+    para gerar relatórios, incluindo nome, tipo e propósito de cada um.
+    """
+    templates_info = {
+        "templates": [
+            {
+                "name": "wp-financeiro",
+                "description": "Relatórios financeiros (contas a receber/pagar, movimentações)",
+                "best_for": ["títulos", "contas", "financeiro", "pagamentos", "recebimentos"],
+                "color_scheme": "vermelho/azul WebPosto"
+            },
+            {
+                "name": "wp-abastecimentos",
+                "description": "Relatórios de vendas e abastecimentos de combustível",
+                "best_for": ["abastecimento", "venda", "combustível", "litros", "frentista"],
+                "color_scheme": "vermelho/azul WebPosto"
+            },
+            {
+                "name": "wp-estoque",
+                "description": "Relatórios de estoque e movimentação de produtos",
+                "best_for": ["estoque", "produto", "inventário", "movimentação"],
+                "color_scheme": "vermelho/azul WebPosto"
+            },
+            {
+                "name": "wp-clientes",
+                "description": "Relatórios de clientes e relacionamento",
+                "best_for": ["cliente", "cadastro", "segmentação", "fidelidade"],
+                "color_scheme": "vermelho/azul WebPosto"
+            },
+            {
+                "name": "wp-analitico",
+                "description": "Relatórios analíticos com KPIs e métricas",
+                "best_for": ["análise", "kpi", "comparativo", "tendência", "métrica"],
+                "color_scheme": "vermelho/azul WebPosto"
+            },
+            {
+                "name": "wp-executivo",
+                "description": "Resumos executivos com múltiplas seções",
+                "best_for": ["executivo", "resumo", "consolidado", "gerencial"],
+                "color_scheme": "vermelho/azul WebPosto"
+            },
+            {
+                "name": "wp-data-report",
+                "description": "Template genérico para qualquer tipo de relatório",
+                "best_for": ["genérico", "personalizado"],
+                "color_scheme": "vermelho/azul WebPosto"
+            }
+        ],
+        "note": "A seleção de template é automática ao usar generate_report_link ou generate_smart_report"
+    }
+    return json.dumps(templates_info, indent=2, ensure_ascii=False)
+
+
+@mcp.resource("jsreport://templates/{template_name}/example")
+def get_template_example(template_name: str) -> str:
+    """
+    Retorna um exemplo de estrutura de dados para usar com um template específico.
+    
+    Este resource ajuda a entender quais campos são esperados por cada template
+    e como estruturar os dados para gerar relatórios.
+    """
+    examples = {
+        "wp-financeiro": {
+            "reportTitle": "Contas a Receber - Janeiro/2026",
+            "reportSubtitle": "Análise Financeira - WebPosto",
+            "clientName": "Posto Quality",
+            "period": "01/01/2026 - 31/01/2026",
+            "reportType": "Financeiro - Contas a Receber",
+            "generatedDate": "20/01/2026 21:00:00",
+            "summaryCards": [
+                {"title": "Total a Receber", "value": "R$ 125.450,00"},
+                {"title": "Títulos Vencidos", "value": "R$ 12.340,00"},
+                {"title": "Taxa de Inadimplência", "value": "9,8%"}
+            ],
+            "tableTitle": "Detalhamento de Títulos",
+            "tableHeaders": ["Cliente", "Vencimento", "Valor", "Status"],
+            "tableData": [
+                ["Cliente A", "15/01/2026", "R$ 5.000,00", "Pago"],
+                ["Cliente B", "20/01/2026", "R$ 3.500,00", "Pendente"]
+            ]
+        },
+        "wp-abastecimentos": {
+            "reportTitle": "Vendas de Combustível - Janeiro/2026",
+            "reportSubtitle": "Análise de Abastecimentos - WebPosto",
+            "clientName": "Posto Quality",
+            "period": "01/01/2026 - 31/01/2026",
+            "reportType": "Abastecimentos",
+            "summaryCards": [
+                {"title": "Volume Total (L)", "value": "45.890"},
+                {"title": "Faturamento", "value": "R$ 250.000,00"},
+                {"title": "Ticket Médio", "value": "R$ 85,50"}
+            ],
+            "tableHeaders": ["Data", "Produto", "Volume (L)", "Valor"],
+            "tableData": [
+                ["15/01/2026", "Gasolina Comum", "1.250", "R$ 7.500,00"],
+                ["15/01/2026", "Etanol", "850", "R$ 3.400,00"]
+            ]
+        },
+        "wp-executivo": {
+            "reportTitle": "Relatório Executivo - Janeiro/2026",
+            "reportSubtitle": "Resumo Gerencial - WebPosto",
+            "clientName": "Posto Quality",
+            "period": "Janeiro/2026",
+            "reportType": "Executivo",
+            "sections": [
+                {
+                    "title": "Financeiro",
+                    "cards": [
+                        {"title": "Receita Total", "value": "R$ 500.000,00"},
+                        {"title": "Despesas", "value": "R$ 350.000,00"}
+                    ],
+                    "tableHeaders": ["Categoria", "Valor"],
+                    "tableData": [
+                        ["Vendas", "R$ 500.000,00"],
+                        ["Custos", "R$ 350.000,00"]
+                    ]
+                },
+                {
+                    "title": "Vendas",
+                    "cards": [
+                        {"title": "Volume (L)", "value": "45.890"},
+                        {"title": "Ticket Médio", "value": "R$ 85,50"}
+                    ]
+                }
+            ]
+        }
+    }
+    
+    if template_name in examples:
+        return json.dumps(examples[template_name], indent=2, ensure_ascii=False)
+    else:
+        return json.dumps({
+            "error": f"Template '{template_name}' não encontrado",
+            "available_templates": list(examples.keys())
+        }, indent=2, ensure_ascii=False)
+
+
+@mcp.resource("jsreport://docs/usage")
+def get_usage_docs() -> str:
+    """
+    Documentação completa de uso do JSReport MCP Server.
+    
+    Este resource fornece instruções detalhadas sobre como usar as tools,
+    estruturar dados e gerar relatórios profissionais.
+    """
+    docs = """# JSReport MCP Server - Guia de Uso
+
+## 🎯 Visão Geral
+
+Este servidor MCP permite gerar relatórios PDF profissionais para o sistema WebPosto.
+Os relatórios são salvos no JSReport e um **link público** é retornado para acesso direto.
+
+## 🔧 Tools Disponíveis
+
+### 1. generate_report_link (RECOMENDADA)
+**Uso:** Gerar relatórios com seleção automática de template
+
+**Quando usar:** Sempre que possível! Esta tool:
+- Analisa o conteúdo e escolhe o template mais adequado
+- Retorna apenas o link público (economia de contexto)
+- Simplifica o processo de geração
+
+**Exemplo:**
+```python
+result = generate_report_link(
+    report_title="Contas a Receber - Janeiro/2026",
+    report_subtitle="Análise Financeira - WebPosto",
+    client_name="Posto Quality",
+    period="01/01/2026 - 31/01/2026",
+    report_type="Financeiro - Contas a Receber",
+    summary_cards=[
+        {"title": "Total a Receber", "value": "R$ 125.450,00"},
+        {"title": "Títulos Vencidos", "value": "R$ 12.340,00"}
+    ],
+    table_headers=["Cliente", "Vencimento", "Valor"],
+    table_data=[
+        ["Cliente A", "15/01/2026", "R$ 5.000,00"],
+        ["Cliente B", "20/01/2026", "R$ 3.500,00"]
+    ]
+)
+
+# Retorna:
+{
+    "success": True,
+    "pdf_url": "https://relatorio.qualityautomacao.com.br/reports/public/xxx/content",
+    "template_used": "wp-financeiro",
+    "auto_selected": True
+}
+```
+
+### 2. generate_smart_report
+**Uso:** Seleção automática com opção de base64
+
+**Diferença:** Permite `return_base64=True` se precisar do conteúdo
+
+### 3. generate_report
+**Uso:** Quando você sabe exatamente qual template usar
+
+**Quando usar:** Casos específicos onde a seleção automática não é adequada
+
+### 4. list_templates
+**Uso:** Listar todos os templates disponíveis via API
+
+### 5. list_saved_reports
+**Uso:** Ver relatórios gerados anteriormente
+
+## 📊 Estrutura de Dados
+
+### Summary Cards (Opcional)
+Lista de 3-6 cards com métricas principais:
+```python
+summary_cards=[
+    {"title": "Métrica 1", "value": "Valor 1"},
+    {"title": "Métrica 2", "value": "Valor 2"}
+]
+```
+
+### Tabela de Dados (Opcional)
+Headers e dados em formato de matriz:
+```python
+table_headers=["Coluna 1", "Coluna 2", "Coluna 3"],
+table_data=[
+    ["Linha 1 Col 1", "Linha 1 Col 2", "Linha 1 Col 3"],
+    ["Linha 2 Col 1", "Linha 2 Col 2", "Linha 2 Col 3"]
+]
+```
+
+### Seções (Apenas wp-executivo)
+Para relatórios com múltiplas seções:
+```python
+sections=[
+    {
+        "title": "Seção 1",
+        "cards": [...],
+        "tableHeaders": [...],
+        "tableData": [...]
+    },
+    {
+        "title": "Seção 2",
+        "cards": [...]
+    }
+]
+```
+
+## 🎨 Templates Disponíveis
+
+| Template | Uso | Palavras-chave |
+|----------|-----|----------------|
+| wp-financeiro | Relatórios financeiros | financeiro, título, receber, pagar, conta |
+| wp-abastecimentos | Vendas de combustível | abastecimento, venda, combustível, litro |
+| wp-estoque | Estoque e produtos | estoque, produto, inventário, movimentação |
+| wp-clientes | Clientes e relacionamento | cliente, cadastro, segmentação |
+| wp-analitico | Análises e KPIs | análise, kpi, comparativo, tendência |
+| wp-executivo | Resumos multi-seção | executivo, resumo, consolidado, gerencial |
+| wp-data-report | Genérico | qualquer tipo |
+
+## 🚀 Fluxo Recomendado
+
+1. **Consultar dados** no webposto-mcp-server
+2. **Processar e calcular** métricas
+3. **Estruturar dados** (cards + tabela)
+4. **Chamar generate_report_link** com os dados
+5. **Retornar link** ao cliente
+
+## ⚡ Dicas de Performance
+
+- Use `generate_report_link` para economizar contexto (99% menos tokens)
+- O link público é válido permanentemente (até limpeza automática)
+- Não precisa processar base64 - só enviar o link
+- Templates são selecionados automaticamente por palavras-chave
+
+## 📝 Exemplo Completo
+
+```
+Cliente solicita: "Quero ver as contas a receber de janeiro"
+
+Agente:
+1. Usa webposto-mcp-server.consultar_titulo_receber(...)
+2. Processa dados e calcula totais
+3. Chama generate_report_link com:
+   - title: "Contas a Receber - Janeiro/2026"
+   - type: "Financeiro"
+   - summary_cards com totais
+   - table_data com detalhamento
+4. Recebe: {"pdf_url": "https://...", "template_used": "wp-financeiro"}
+5. Responde: "Seu relatório está pronto: [link]"
+```
+
+## 🔗 Links Úteis
+
+- Documentação JSReport: https://jsreport.net/learn
+- GitHub: https://github.com/BrusCode/jsreport-mcp-server
+"""
+    return docs
+
+
+@mcp.resource("jsreport://templates/keywords")
+def get_template_keywords() -> str:
+    """
+    Mapeamento de palavras-chave para seleção automática de templates.
+    
+    Este resource mostra quais palavras-chave são usadas pelo sistema
+    para escolher automaticamente o template mais adequado.
+    """
+    keywords_map = {
+        "wp-financeiro": [
+            "financeiro", "título", "receber", "pagar", "conta", "pagamento",
+            "receita", "despesa", "saldo", "banco", "transferência", "contábil",
+            "lançamento", "fluxo de caixa", "dre"
+        ],
+        "wp-abastecimentos": [
+            "abastecimento", "venda", "combustível", "litro", "gasolina",
+            "etanol", "diesel", "gnv", "bico", "bomba", "frentista"
+        ],
+        "wp-estoque": [
+            "estoque", "produto", "inventário", "reajuste", "movimentação",
+            "entrada", "saída", "saldo", "armazenamento", "loja", "conveniência"
+        ],
+        "wp-clientes": [
+            "cliente", "cadastro", "grupo", "segmentação", "relacionamento",
+            "fidelidade", "cartão", "crédito cliente"
+        ],
+        "wp-analitico": [
+            "análise", "kpi", "indicador", "performance", "desempenho",
+            "comparativo", "tendência", "evolução", "métrica", "dashboard"
+        ],
+        "wp-executivo": [
+            "executivo", "resumo", "visão geral", "consolidado", "gerencial",
+            "diretoria", "overview"
+        ]
+    }
+    
+    return json.dumps({
+        "description": "Palavras-chave usadas para seleção automática de templates",
+        "note": "O sistema conta quantas palavras-chave aparecem no título, tipo e subtítulo do relatório",
+        "keywords": keywords_map,
+        "fallback": "wp-data-report (usado quando nenhuma palavra-chave corresponde)"
+    }, indent=2, ensure_ascii=False)
+
+
+# ============================================================================
+# PROMPTS
+# ============================================================================
+
+@mcp.prompt
+def generate_financial_report(
+    client_name: str,
+    period: str,
+    report_type: str = "Contas a Receber"
+) -> str:
+    """
+    Gera um prompt para solicitar relatório financeiro com dados do WebPosto.
+    
+    Este prompt guia o agente a consultar dados financeiros, processar métricas
+    e gerar um relatório PDF profissional usando o JSReport.
+    """
+    return f"""Por favor, gere um relatório financeiro de {report_type} para o cliente {client_name} referente ao período {period}.
+
+Siga estes passos:
+1. Use o webposto-mcp-server para consultar os dados de {report_type.lower()}
+2. Calcule as métricas principais:
+   - Total geral
+   - Valores vencidos (se aplicável)
+   - Taxa de inadimplência (se aplicável)
+   - Outras métricas relevantes
+3. Use generate_report_link do jsreport-mcp-server para gerar o PDF com:
+   - summary_cards com as métricas calculadas
+   - table_data com detalhamento dos registros
+   - O template será selecionado automaticamente (provavelmente wp-financeiro)
+4. Apresente um resumo executivo dos dados e o link para download do relatório completo
+
+Formato esperado do relatório:
+- Título: "{report_type} - {period}"
+- Subtítulo: "Análise Financeira - WebPosto"
+- Cliente: {client_name}
+- 3-5 cards com métricas principais
+- Tabela com detalhamento (colunas relevantes para {report_type})"""
+
+
+@mcp.prompt
+def analyze_fuel_sales(
+    client_name: str,
+    start_date: str,
+    end_date: str,
+    fuel_type: str = "Todos"
+) -> list[Message]:
+    """
+    Cria um prompt estruturado para análise de vendas de combustível.
+    
+    Guia o agente através do processo completo de consulta, análise e geração
+    de relatório para vendas de combustível.
+    """
+    return [
+        Message(f"""Analise as vendas de combustível do cliente {client_name} entre {start_date} e {end_date}.
+
+Combustível: {fuel_type}
+
+Etapas a seguir:
+1. Consulte os dados de abastecimento no webposto-mcp-server
+2. Calcule as seguintes métricas:
+   - Volume total vendido (litros)
+   - Faturamento total (R$)
+   - Ticket médio por abastecimento
+   - Produto mais vendido
+   - Distribuição por tipo de combustível
+3. Identifique tendências e insights relevantes
+4. Gere um relatório PDF usando generate_report_link com:
+   - Template: wp-abastecimentos (será selecionado automaticamente)
+   - Summary cards com as métricas principais
+   - Tabela com detalhamento das vendas
+
+Apresente um resumo executivo e o link do relatório completo."""),
+        Message("Entendido. Vou consultar os dados de abastecimento e gerar a análise completa com relatório PDF.", role="assistant")
+    ]
+
+
+@mcp.prompt
+def create_executive_summary(
+    client_name: str,
+    month: str,
+    sections: list[str] = ["Financeiro", "Vendas", "Estoque"]
+) -> PromptResult:
+    """
+    Gera prompt para relatório executivo multi-seção.
+    
+    Este prompt cria um relatório consolidado com múltiplas seções,
+    ideal para apresentações gerenciais.
+    """
+    sections_str = ", ".join(sections)
+    
+    return PromptResult(
+        messages=[
+            Message(f"""Crie um relatório executivo completo para {client_name} referente a {month}.
+
+Seções a incluir: {sections_str}
+
+Para cada seção solicitada:
+1. Consulte os dados relevantes no webposto-mcp-server
+2. Calcule os KPIs principais da seção
+3. Identifique insights e tendências importantes
+4. Prepare cards e tabela específicos para a seção
+
+Ao final:
+- Use generate_report_link com:
+  * Template: wp-executivo (será selecionado automaticamente)
+  * Campo 'sections' com array de objetos, cada um contendo:
+    - title: nome da seção
+    - cards: métricas principais da seção
+    - tableHeaders e tableData: detalhamento da seção
+- Apresente um resumo executivo consolidado
+- Forneça o link do relatório PDF completo
+
+O relatório deve ser adequado para apresentação à diretoria.""")
+        ],
+        description=f"Relatório executivo multi-seção para {client_name}",
+        meta={"client": client_name, "month": month, "sections": sections}
+    )
+
+
+@mcp.prompt
+def compare_periods(
+    client_name: str,
+    period1: str,
+    period2: str,
+    metric: str = "Vendas"
+) -> str:
+    """
+    Prompt para análise comparativa entre dois períodos.
+    
+    Guia o agente na criação de um relatório comparativo mostrando
+    a evolução de métricas entre dois períodos.
+    """
+    return f"""Compare {metric} do cliente {client_name} entre os períodos:
+- Período 1: {period1}
+- Período 2: {period2}
+
+Análise requerida:
+1. Consulte dados de ambos os períodos no webposto-mcp-server
+2. Para cada período, calcule:
+   - Totais principais
+   - Médias relevantes
+   - Distribuições importantes
+3. Calcule variações:
+   - Variação absoluta (diferença)
+   - Variação percentual (%)
+   - Tendência (crescimento/queda)
+4. Identifique principais mudanças e possíveis causas
+5. Gere relatório usando generate_report_link com:
+   - Template: wp-analitico (será selecionado automaticamente)
+   - Cards mostrando totais de cada período e variação
+   - Tabela comparativa lado a lado
+   - Destaque para maiores variações
+
+Apresente:
+- Resumo executivo da comparação
+- Principais insights identificados
+- Link do relatório PDF completo"""
+
+
+@mcp.prompt
+def help_with_reports() -> list[Message]:
+    """
+    Fornece orientações sobre como usar o sistema de relatórios.
+    
+    Este prompt é útil quando o usuário não sabe que tipo de relatório
+    solicitar ou como estruturar sua solicitação.
+    """
+    return [
+        Message("""Olá! Posso ajudá-lo a gerar relatórios do WebPosto. 📊
+
+**Tipos de relatórios disponíveis:**
+
+📊 **Financeiro** - Contas a receber/pagar, fluxo de caixa, movimentações bancárias
+⛽ **Abastecimentos** - Vendas de combustível, análise de produtos, volume
+📦 **Estoque** - Movimentação, inventário, reajustes de preço
+👥 **Clientes** - Cadastros, segmentação, relacionamento, fidelidade
+📈 **Analítico** - KPIs, comparativos, tendências, dashboards
+📋 **Executivo** - Resumos multi-seção para apresentações gerenciais
+
+**Como solicitar um relatório:**
+
+1. Informe o **tipo de relatório** desejado
+2. Especifique o **período** (ex: "Janeiro/2026" ou "01/01/2026 - 31/01/2026")
+3. Adicione **filtros** se necessário (cliente específico, produto, etc.)
+
+**Exemplos de solicitações:**
+
+- "Quero um relatório de contas a receber de janeiro para o Posto Quality"
+- "Mostre as vendas de combustível da última semana"
+- "Preciso de um resumo executivo do mês passado com financeiro e vendas"
+- "Compare as vendas de janeiro com fevereiro"
+
+**O que acontece:**
+
+1. Consulto os dados no sistema WebPosto
+2. Calculo as métricas e insights
+3. Gero um relatório PDF profissional
+4. Forneço um link direto para download
+
+O que você gostaria de consultar?"""),
+        Message("Estou pronto para ajudar com seus relatórios! Pode me dizer que tipo de informação você precisa?", role="assistant")
+    ]
+
+
+@mcp.prompt
+def quick_report_request(
+    report_description: str
+) -> str:
+    """
+    Prompt genérico para solicitações rápidas de relatório.
+    
+    Use quando o usuário fizer uma solicitação informal ou incompleta.
+    Este prompt ajuda a estruturar a solicitação.
+    """
+    return f"""O usuário solicitou: "{report_description}"
+
+Por favor:
+1. Identifique o tipo de relatório solicitado (financeiro, abastecimentos, estoque, etc.)
+2. Determine o período relevante (se não especificado, pergunte ou use o mês atual)
+3. Consulte os dados apropriados no webposto-mcp-server
+4. Processe e calcule as métricas relevantes
+5. Gere o relatório usando generate_report_link
+6. Apresente um resumo e o link para download
+
+Se a solicitação estiver incompleta ou ambígua, faça perguntas esclarecedoras antes de prosseguir."""

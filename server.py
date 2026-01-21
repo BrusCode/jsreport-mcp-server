@@ -106,7 +106,7 @@ def detect_report_type(data: dict) -> str:
     return "wp-data-report"
 
 
-def _render_report(template_name: str, data: dict, save_public: bool = True) -> dict:
+def _render_report(template_name: str, data: dict, save_public: bool = True, return_base64: bool = False) -> dict:
     """
     Função interna para renderizar relatório no JSReport.
     
@@ -114,6 +114,7 @@ def _render_report(template_name: str, data: dict, save_public: bool = True) -> 
         template_name: Nome do template a usar
         data: Dados para o relatório
         save_public: Se True, salva o relatório e retorna link público
+        return_base64: Se True, sempre inclui base64 na resposta
     
     Returns:
         Dicionário com resultado da renderização
@@ -160,8 +161,11 @@ def _render_report(template_name: str, data: dict, save_public: bool = True) -> 
                 else:
                     result["has_public_link"] = False
                 
-                # Sempre incluir base64 como fallback
-                result["pdf_base64"] = base64.b64encode(response.content).decode('utf-8')
+                # Incluir base64 apenas se:
+                # 1. Não houver link público (fallback necessário), OU
+                # 2. return_base64=True (explicitamente solicitado)
+                if not permanent_link or return_base64:
+                    result["pdf_base64"] = base64.b64encode(response.content).decode('utf-8')
                 
                 return result
             else:
@@ -273,15 +277,12 @@ def generate_report_link(
     # Detectar template mais adequado
     template_name = detect_report_type(data)
     
-    # Renderizar com salvamento público
-    result = _render_report(template_name, data, save_public=True)
+    # Renderizar com salvamento público (sem base64 para economizar contexto)
+    result = _render_report(template_name, data, save_public=True, return_base64=False)
     
     # Adicionar informação de seleção automática
     if result.get("success"):
         result["auto_selected"] = True
-        # Remover base64 para economizar contexto (link é suficiente)
-        if result.get("has_public_link") and "pdf_base64" in result:
-            del result["pdf_base64"]
     
     return result
 
@@ -359,14 +360,11 @@ def generate_smart_report(
     # Detectar template
     template_name = detect_report_type(data)
     
-    # Renderizar
-    result = _render_report(template_name, data, save_public=True)
+    # Renderizar (passando return_base64)
+    result = _render_report(template_name, data, save_public=True, return_base64=return_base64)
     
     if result.get("success"):
         result["auto_selected"] = True
-        # Remover base64 se não solicitado
-        if not return_base64 and result.get("has_public_link") and "pdf_base64" in result:
-            del result["pdf_base64"]
     
     return result
 
@@ -446,12 +444,11 @@ def generate_report(
     if sections:
         data["sections"] = sections
     
-    result = _render_report(template_name, data, save_public=True)
+    # Renderizar (passando return_base64)
+    result = _render_report(template_name, data, save_public=True, return_base64=return_base64)
     
     if result.get("success"):
         result["auto_selected"] = False
-        if not return_base64 and result.get("has_public_link") and "pdf_base64" in result:
-            del result["pdf_base64"]
     
     return result
 
